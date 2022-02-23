@@ -19,7 +19,7 @@
   * [Vector Stores](#no-maskedoff-stores)
   * [Reduction Instructions](#no-maskedoff-reduction)
   * [Merge Instructions](#no-maskedoff-merge)
-- [Tail Policy in the Intrinsics](#tail-policy)
+- [Policy Intrinsic Functions](#policy)
 - [Keep the Original Values of the Destination Vector](#dest-operand)
 - [SEW and LMUL of Intrinsics](#sew-and-lmul-of-intrinsics)
 - [C Operators on RISC-V Vector Types](#c-operators)
@@ -348,70 +348,83 @@ vmerge.vvm vd, vs2, vs1, v0:
 vint8m1_t vmerge_vvm_i8m1_m(vbool8_t mask, vint8m1_t vs2, vint8m1_t vs1, size_t vl);
 ```
 
-## Tail Policy in the Intrinsics<a name="tail-policy"></a>
+## Policy Intrinsic Functions<a name="policy"></a>
 
-The naming rule of intrinsics with tail policy is
+Users could use policy intrinsic functions to control tail and mask policy.
+
+Enocde the policy explicitly in function name suffix if operations support those policies.
 
 ```
-INTRINSIC_WITH_ADDITIONAL_DEST ::= INTRINSIC '_tu'
+INTRINSIC_WITH_TU ::= INTRINSIC '_tu'
+INTRINSIC_WITH_TA ::= INTRINSIC '_ta'
+INTRINSIC_WITH_MASK_TU_MU ::= INTRINSIC '_tumu'
+INTRINSIC_WITH_MASK_TA_MU ::= INTRINSIC '_tamu'
+INTRINSIC_WITH_MASK_TU_MA ::= INTRINSIC '_tuma'
+INTRINSIC_WITH_MASK_TA_MA ::= INTRINSIC '_tama'
 ```
 
 ```
 Example:
 
-vadd.vv vd, vs2, vs1, v0.t:
+vadd.vv vd, vs2, vs1:
 
-// Add an additional `dest` argument to control tail undisturbed/agnostic.
-// `dest` == vundefined(), tail agnostic.
-vint8m1_t vmv_v_x_i8m1_tu(vint8m1_t dest, int8_t src, size_t vl);
+vint8mf8_t vadd_vv_i8mf8_tu (vint8mf8_t undisturbed, vint8mf8_t op1, vint8mf8_t op2, size_t vl);
 ```
 
-Define two constants for tail policy. Users could use these two constants for `ta` argument.
-```
-#define VE_TAIL_UNDISTURBED 0
-#define VE_TAIL_AGNOSTIC 1
-```
+For intrinsics without the destination argument which may use tail and mask value.
 
-For intrinsics with `maskedoff` and `ta` argument:
-| Masked? | Needs tail preserved | Needs maskedoff preserved | Intrinsic
-| ------- | -------------------- | ------------------------- | ------------------------------------------------------------------------
-| No      | No                   | N/A                       | `vadd_vv_<ty>(vs2, vs1, vl)`
-| No      | Yes                  | N/A                       | `vadd_vv_<ty>_tu(dest, vs2, vs1, vl)`
-| Yes     | No                   | No                        | No support.
-| Yes     | No                   | Yes                       | No support.
-| Yes     | Yes                  | Yes                       | No support.
-| Yes     | Yes                  | No                        | No support. Tail undisturbed and maskedoff agnostic is likely rare.
+Masked?  | TU? | MU? | Intrinsic
+--- |--- |--- |---
+No  | No | N/A| `vadd_vv_i8m1_ta(vs2, vs1, vl)` and `vadd_vv_i8m1(vs2, vs1, vl)`
+No  | Yes| N/A| `vadd_vv_i8m1_tu(undisturbed,vs2, vs1, vl)`
+Yes | No | No | `vadd_vv_i8m1_tama(mask, vs2, vs1, vl)`
+Yes | No | Yes| `vadd_vv_i8m1_tamu(mask, merge, vs2, vs1, vl)` and `vadd_vv_i8m1_m(mask, merge, vs2, vs1, vl)` if merge is `vundefined()`
+Yes | Yes| No | `vadd_vv_i8m1_tuma(mask, merge, vs2, vs1, vl)`
+Yes | Yes| Yes| `vadd_vv_i8m1_tumu(mask, merge, vs2, vs1, vl)` and `vadd_vv_i8m1_m(mask, merge, vs2, vs1, vl)`
 
 For intrinsics without mask and with an additional `dest` argument:
 | Masked? | Needs tail preserved | Needs maskedoff preserved | Intrinsic
 | ------- | -------------------- | ------------------------- | ---------------------------------------
-| No      | No                   | N/A                       | `vmv_v_x_<ty>(src, vl)`
-| No      | Yes                  | N/A                       | `vmv_v_x_<ty>_tu(dest, src, vl)`
+| No      | No                   | N/A                       | `vmv_v_x_<ty>_ta(src, vl)` and `vmv_v_x_<ty>(src, vl)`
+| No      | Yes                  | N/A                       | `vmv_v_x_<ty>_tu(undisturbed, src, vl)`
 
-For multiply-add intrinsics:
-| Masked? | Needs tail preserved | Needs maskedoff preserved | Intrinsic
-| ------- | -------------------- | ------------------------- | -------------------------------------------------------------------
-| No      | No                   | N/A                       | `vmacc_vv_<ty>(vd, vs1, vs2, vl)`
-| No      | Yes                  | N/A                       | `vmacc_vv_<ty>_tu(vd, vs1, vs2, vl)`
-| Yes     | No                   | No                        | No support.
-| Yes     | No                   | Yes                       | No support.
-| Yes     | Yes                  | Yes                       | No support.
-| Yes     | Yes                  | No                        | No support. Tail undisturbed and maskedoff agnostic is likely rare.
+For multiply-add intrinsics or other intrinsics with the destination argument which may use tail and mask value.
+Masked?  | TU? | MU? | Intrinsic
+--- |--- |--- |---
+No  | No | N/A| `vmacc_vv_i8m1_ta(vd, vs1, vs2, vl)`
+No  | Yes| N/A| `vmacc_vv_i8m1_tu(vd, vs1, vs2, vl)` and `vmacc_vv_i8m1(vd, vs1, vs2, vl)`
+Yes | No | No | `vmacc_vv_i8m1_tama(mask, vd, vs1, vs2, vl)`
+Yes | No | Yes| `vmacc_vv_i8m1_tamu(mask, vd, vs1, vs2, vl)`
+Yes | Yes| No | `vmacc_vv_i8m1_tuma(mask, vd, vs1, vs2, vl)`
+Yes | Yes| Yes | `vmacc_vv_i8m1_tumu(mask, vd, vs1, vs2, vl)` and `vmacc_vv_i8m1_m(mask, vd, vs1, vs2, vl)`
 
-If the type of the destination is mask type or scalar type, it is always tail-agnostic. The intrinsics are
-* Vector Integer Comparison Instructions
-* Vector Floating-Point Compare Instructions
-* Vector Floating-Point Classify Instruction
-* vmadc.vvm/vmadc.vxm/vmadc.vim
-* vmadc.vv/vmadc.vx/vmadc.vi
-* vmsbc.vvm/vmsbc.vxm
-* vmsbc.vv/vmsbc.vx
-* vmsbf.m
-* vmsif.m
-* vmsof.m
-* vcpop.m
-* vmv.x.s
-* vfmv.f.s
+For reduction intrinsics which may only use tail value.
+
+Masked?  | TU? | MU? | Intrinsic
+--- |--- |--- |---
+No  | No | N/A| `redsum_vs_i8m1_ta(vs1, vs2, vl)`
+No  | Ye | N/A| `redsum_vs_i8m1_tu(vd, vs1, vs2, vl)` and `redsum_vs_i8m1(vd, vs1, vs2, vl)`
+Yes | No | No | `redsum_vs_i8m1_tama(mask, vs1, vs2, vl)`
+Yes | No | Yes| `redsum_vv_i8m1_m(mask, vd, vs1, vs2, vl)` if vd is `vundefined()`
+Yes | Yes| No | `redsum_vs_i8m1_tuma(mask, vd, vs1, vs2, vl)`
+Yes | Yes| Yes| `redsum_vs_i8m1_m(mask, vd, vs1, vs2, vl)`
+
+There are some special cases list as below:
+
+1. vadc/vsbc support `_ta` and _`tu`.
+2. vmadc/vmsbc support `_ta`.
+3. Vector Integer and Floating-Point Comparison Instructions support `_ta`, `_tamu` and `_tama`.
+4. Vector Integer and Floating-Point Move support `_ta` and `_tu`.
+5. vlm.v support `_ta`.
+6. vmsbf.m/vmsif.m/vmsof.m support `_ta`, `_tamu` and `_tama`.
+7. vmv.s.x/vfmv.s.f support `_ta` and `_tu`.
+8. Vector Integer and Floating-Point Merge Instructions support `_ta` and `_tu`.
+9. Vector Compress Instruction support `_ta` and `_tu`.
+10. Vector Store, vfirst.m, vmv.x.s, vfmv.f.s, vcpop.m and Miscellaneous Functions don't have policy intrinsic functions.
+11. vslideup and vslidedown don't have dest operand in `_ta` and `_tama`.
+
+For overloading functions, encode the policy in the end of function name.
+For example, vadd would have `vadd_ta`, `vadd_tu`, `vadd_tama`, `vadd_tamu`, `vadd_tuma` and `vadd_tumu` intrinsic functions.
 
 ## Keep the Original Values of the Destination Vector<a name="dest-operand"></a>
 
